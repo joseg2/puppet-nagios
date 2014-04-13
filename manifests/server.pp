@@ -117,7 +117,7 @@ class nagios::server (
   # Custom plugin scripts required on the server
   if $plugin_nginx {
     file { "${plugin_dir}/check_nginx":
-      ensure  => installed,
+      ensure  => $ensure,
       owner   => 'root',
       group   => 'root',
       mode    => '0755',
@@ -130,7 +130,7 @@ class nagios::server (
   }
   if $plugin_xcache {
     file { "${plugin_dir}/check_xcache":
-      ensure  => installed,
+      ensure  => $ensure,
       owner   => 'root',
       group   => 'root',
       mode    => '0755',
