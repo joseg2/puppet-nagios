@@ -91,8 +91,6 @@ class nagios::server (
   $services         = {},
   $servicegroups    = {},
   $timeperiods      = {},
-  $hostgroups       = {},
-  $servicegroups    = {},
 ) inherits ::nagios::params {
 
   # Full nrpe command to run, with default options
@@ -119,7 +117,7 @@ class nagios::server (
   # Custom plugin scripts required on the server
   if $plugin_nginx {
     file { "${plugin_dir}/check_nginx":
-      ensure  => $ensure,
+      ensure  => installed,
       owner   => 'root',
       group   => 'root',
       mode    => '0755',
@@ -132,7 +130,7 @@ class nagios::server (
   }
   if $plugin_xcache {
     file { "${plugin_dir}/check_xcache":
-      ensure  => $ensure,
+      ensure  => installed,
       owner   => 'root',
       group   => 'root',
       mode    => '0755',
@@ -679,7 +677,7 @@ class nagios::server (
   }
 
   # With selinux, adjustements are needed for nagiosgraph
-  if $selinux == 'true' and $::selinux_enforced == 'true' {
+  if $selinux == true and $::selinux_enforced == true {
     selinux::audit2allow { 'nagios':
       source => "puppet:///modules/${module_name}/messages.nagios",
     }
