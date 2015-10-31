@@ -7,15 +7,17 @@ class nagios::params {
   $libdir = $::architecture ? {
     'x86_64' => 'lib64',
     'amd64'  => 'lib64',
-     default => 'lib',
+    'ppc64'  => 'lib64',
+    default  => 'lib',
   }
 
   # The easy bunch
   $nagios_service = 'nagios'
   $nagios_user    = 'nagios'
   # nrpe
-  $nrpe_service   = 'nrpe'
   $nrpe_cfg_file  = '/etc/nagios/nrpe.cfg'
+  $nrpe_command   = '$USER1$/check_nrpe -H $HOSTADDRESS$'
+  $nrpe_options   = '-t 15'
 
   # Optional plugin packages, to be realized by tag where needed
   # Note: We use tag, because we can't use alias for 2 reasons :
@@ -24,6 +26,7 @@ class nagios::params {
   $nagios_plugins_packages = [
     'nagios-plugins-disk',
     'nagios-plugins-file_age',
+    'nagios-plugins-http',
     'nagios-plugins-ide_smart',
     'nagios-plugins-ifstatus',
     'nagios-plugins-linux_raid',
@@ -41,15 +44,21 @@ class nagios::params {
   ]
 
   case $::operatingsystem {
-    'RedHat', 'Fedora', 'CentOS', 'Scientific': {
+    'RedHat', 'Fedora', 'CentOS', 'Scientific', 'Amazon': {
       $nrpe_package       = [ 'nrpe', 'nagios-plugins' ]
+      $nrpe_service       = 'nrpe'
       $nrpe_user          = 'nrpe'
       $nrpe_group         = 'nrpe'
-      $nrpe_pid_file      = hiera('nagios::params::nrpe_pid_file','/var/run/nrpe.pid')
+      if ( $::operatingsystem != 'Fedora' and versioncmp($::operatingsystemrelease, '7') >= 0 ) {
+        $nrpe_pid_file    = hiera('nagios::params::nrpe_pid_file','/run/nrpe/nrpe.pid')
+      } else {
+        $nrpe_pid_file    = hiera('nagios::params::nrpe_pid_file','/var/run/nrpe/nrpe.pid')
+      }
       $nrpe_cfg_dir       = hiera('nagios::params::nrpe_cfg_dir','/etc/nrpe.d')
       $plugin_dir         = hiera('nagios::params::plugin_dir',"/usr/${libdir}/nagios/plugins")
-      $pid_file           = hiera('nagios::params::pid_file','/var/run/nagios.pid')
+      $pid_file           = hiera('nagios::params::pid_file','/var/run/nagios/nagios.pid')
       $megaclibin         = '/usr/sbin/MegaCli'
+      $perl_memcached     = 'perl-Cache-Memcached'
       @package { $nagios_plugins_packages:
         ensure => installed,
         tag    => $name,
@@ -58,6 +67,7 @@ class nagios::params {
     'Gentoo': {
       $nrpe_package       = [ 'net-analyzer/nrpe' ]
       $nrpe_package_alias = 'nrpe'
+      $nrpe_service       = 'nrpe'
       $nrpe_user          = 'nagios'
       $nrpe_group         = 'nagios'
       $nrpe_pid_file      = '/run/nrpe.pid'
@@ -65,21 +75,42 @@ class nagios::params {
       $plugin_dir         = "/usr/${libdir}/nagios/plugins"
       $pid_file           = '/run/nagios.pid'
       $megaclibin         = '/opt/bin/MegaCli'
+      $perl_memcached     = 'dev-perl/Cache-Memcached'
       # No package splitting in Gentoo
       @package { 'net-analyzer/nagios-plugins':
         ensure => installed,
         tag    => $nagios_plugins_packages,
       }
     }
+    'Debian', 'Ubuntu': {
+      $nrpe_package       = [ 'nagios-nrpe-server' ]
+      $nrpe_package_alias = 'nrpe'
+      $nrpe_service       = 'nagios-nrpe-server'
+      $nrpe_user          = 'nagios'
+      $nrpe_group         = 'nagios'
+      $nrpe_pid_file      = hiera('nagios::params::nrpe_pid_file','/var/run/nagios/nrpe.pid')
+      $nrpe_cfg_dir       = hiera('nagios::params::nrpe_cfg_dir','/etc/nagios/nrpe.d')
+      $plugin_dir         = hiera('nagios::params::plugin_dir','/usr/lib/nagios/plugins')
+      $pid_file           = hiera('nagios::params::pid_file','/var/run/nagios/nagios.pid')
+      $megaclibin         = '/opt/bin/MegaCli'
+      $perl_memcached     = 'libcache-memcached-perl'
+      # No package splitting in Debian
+      @package { 'nagios-plugins':
+        ensure => installed,
+        tag    => $nagios_plugins_packages,
+      }
+    }
     default: {
       $nrpe_package       = [ 'nrpe', 'nagios-plugins' ]
+      $nrpe_service       = 'nrpe'
       $nrpe_user          = 'nrpe'
       $nrpe_group         = 'nrpe'
       $nrpe_pid_file      = hiera('nagios::params::nrpe_pid_file','/var/run/nrpe.pid')
       $nrpe_cfg_dir       = hiera('nagios::params::nrpe_cfg_dir','/etc/nagios/nrpe.d')
       $plugin_dir         = hiera('nagios::params::plugin_dir','/usr/libexec/nagios/plugins')
       $pid_file           = hiera('nagios::params::pid_file','/var/run/nagios.pid')
-      $megaclibin         = '/usr/sbin/MegaCli'
+      $megaclibin         = hiera('nagios::params::megaclibin','/usr/sbin/MegaCli')
+      $perl_memcached     = hiera('nagios::params::perl_memcached','perl-Cache-Memcached')
       @package { $nagios_plugins_packages:
         ensure => installed,
         tag    => $name,

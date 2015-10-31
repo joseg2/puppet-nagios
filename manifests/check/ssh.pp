@@ -1,7 +1,6 @@
-class nagios::check::ntp_time (
+class nagios::check::ssh (
   $ensure                   = undef,
-  $args                     = '-w 1 -c 2',
-  $ntp_server               = undef,
+  $args                     = $::nagios::client::args,
   $check_title              = $::nagios::client::host_name,
   $servicegroups            = undef,
   $check_period             = $::nagios::client::service_check_period,
@@ -12,23 +11,10 @@ class nagios::check::ntp_time (
   $use                      = $::nagios::client::service_use,
 ) {
 
-  # Required plugin
-  if $ensure != 'absent' {
-    Package <| tag == 'nagios-plugins-ntp' |>
-  }
-  # Include default host (-H) if no override in $args
-  if $args !~ /-H/ { $arg_host = '-H 0.pool.ntp.org ' } else { $arg_host = '' }
-  $fullargs = "${arg_host}${args}"
-
-  nagios::client::nrpe_file { 'check_ntp_time':
-    ensure => $ensure,
-    args   => $fullargs,
-  }
-
-  nagios::service { "check_ntp_time_${check_title}":
+  nagios::service { "check_sshd_${check_title}":
     ensure                   => $ensure,
-    check_command            => 'check_nrpe_ntp_time',
-    service_description      => 'ntp_time',
+    check_command            => "check_ssh!${args}",
+    service_description      => 'sshd',
     servicegroups            => $servicegroups,
     check_period             => $check_period,
     contact_groups           => $contact_groups,

@@ -1,3 +1,5 @@
+# Nagios Server class
+#
 class nagios::server (
   # For the tag of the stored configuration to realize
   $nagios_server        = 'default',
@@ -17,8 +19,9 @@ class nagios::server (
     'cgi',
   ],
   # The apache config snippet, more useful as a template when using a custom
-  $apache_httpd_conf_content    = template('nagios/apache_httpd/httpd-nagios.conf.erb'),
-  $apache_allowed_from          = [],   # Allow access to the web in the previous template
+  $apache_httpd_conf_content    = undef,
+  $apache_httpd_conf_source     = undef,
+  $apache_allowed_from          = [],   # Allow access in default template
   $apache_httpd_htpasswd_source = "puppet:///modules/${module_name}/apache_httpd/htpasswd",
   $php     = true,
   $php_apc = true,
@@ -31,6 +34,7 @@ class nagios::server (
   $cgi_authorized_for_all_service_commands      = 'nagiosadmin',
   $cgi_authorized_for_all_host_commands         = 'nagiosadmin',
   $cgi_default_statusmap_layout                 = '5',
+  $cgi_result_limit                             = '100',
   # nagios.cfg
   $cfg_file = [
     # Where puppet managed types are
@@ -41,6 +45,7 @@ class nagios::server (
     '/etc/nagios/nagios_hostdependency.cfg',
     '/etc/nagios/nagios_hostgroup.cfg',
     '/etc/nagios/nagios_service.cfg',
+    '/etc/nagios/nagios_servicedependency.cfg',
     '/etc/nagios/nagios_servicegroup.cfg',
     '/etc/nagios/nagios_timeperiod.cfg',
   ],
@@ -53,22 +58,25 @@ class nagios::server (
   $service_perfdata_file_mode     = 'a',
   $service_perfdata_file_processing_interval = '0',
   $service_perfdata_file_processing_command  = false,
+  $enable_flap_detection = '1',
   $date_format = 'iso8601',
   $admin_email = 'root@localhost',
   $admin_pager = 'pagenagios@localhost',
+  $cfg_append  = undef,
   # private/resource.cfg for $USERx$ macros (from 1 to 32)
   $user = {
-    '1' => $nagios::params::plugin_dir,
+    '1' => $::nagios::params::plugin_dir,
   },
-  # Options for all nrpe-based checks
-  $nrpe_options   = '-t 15',
+  # Command and options for all nrpe-based checks
+  $nrpe_command   = $::nagios::params::nrpe_command,
+  $nrpe_options   = $::nagios::params::nrpe_options,
   # Contacts and Contact Groups
   $admins_members = 'nagiosadmin',
   # Others
   $notify_host_by_email_command_line    = '/usr/bin/printf "%b" "***** Nagios *****\n\nNotification Type: $NOTIFICATIONTYPE$\nHost: $HOSTNAME$\nState: $HOSTSTATE$\nAddress: $HOSTADDRESS$\nInfo: $HOSTOUTPUT$\n\nDate/Time: $LONGDATETIME$\n" | /bin/mail -s "** $NOTIFICATIONTYPE$ Host Alert: $HOSTNAME$ is $HOSTSTATE$ **" $CONTACTEMAIL$',
   $notify_service_by_email_command_line = '/usr/bin/printf "%b" "***** Nagios *****\n\nNotification Type: $NOTIFICATIONTYPE$\n\nService: $SERVICEDESC$\nHost: $HOSTALIAS$\nAddress: $HOSTADDRESS$\nState: $SERVICESTATE$\n\nDate/Time: $LONGDATETIME$\n\nAdditional Info:\n\n$SERVICEOUTPUT$" | /bin/mail -s "** $NOTIFICATIONTYPE$ Service Alert: $HOSTALIAS$/$SERVICEDESC$ is $SERVICESTATE$ **" $CONTACTEMAIL$',
   $timeperiod_workhours = '09:00-17:00',
-  $plugin_dir           = $nagios::params::plugin_dir,
+  $plugin_dir           = $::nagios::params::plugin_dir,
   $plugin_nginx         = false,
   $plugin_xcache        = false,
   $selinux              = $::selinux,
@@ -91,17 +99,18 @@ class nagios::server (
   $services         = {},
   $servicegroups    = {},
   $timeperiods      = {},
+  $hostgroups       = {},
+  $servicegroups    = {},
 ) inherits ::nagios::params {
 
   # Full nrpe command to run, with default options
-  $nrpe = "\$USER1\$/check_nrpe -H \$HOSTADDRESS\$ ${nrpe_options}"
+  $nrpe = "${nrpe_command} ${nrpe_options}"
 
   # Plugin packages required on the server side
   package { [
     'nagios',
     'nagios-plugins-dhcp',
     'nagios-plugins-dns',
-    'nagios-plugins-http',
     'nagios-plugins-icmp',
     'nagios-plugins-ldap',
     'nagios-plugins-nrpe',
@@ -113,11 +122,12 @@ class nagios::server (
   ]:
     ensure => installed,
   }
+  # Plugin packages required on both the client and server sides
+  Package <| tag == 'nagios-plugins-http' |>
 
   # Custom plugin scripts required on the server
   if $plugin_nginx {
     file { "${plugin_dir}/check_nginx":
-      ensure  => $ensure,
       owner   => 'root',
       group   => 'root',
       mode    => '0755',
@@ -130,7 +140,6 @@ class nagios::server (
   }
   if $plugin_xcache {
     file { "${plugin_dir}/check_xcache":
-      ensure  => $ensure,
       owner   => 'root',
       group   => 'root',
       mode    => '0755',
@@ -143,14 +152,11 @@ class nagios::server (
   }
 
   # Other packages
-  package { [
-    'mailx', # For the default email notifications to work
-  ]:
-    ensure => installed,
-  }
+  # For the default email notifications to work
+  package { 'mailx': ensure => 'installed' }
 
   service { 'nagios':
-    ensure    => running,
+    ensure    => 'running',
     enable    => true,
     # "service nagios status" returns 0 when "nagios is not running" :-(
     hasstatus => false,
@@ -161,29 +167,38 @@ class nagios::server (
     require   => Package['nagios'],
   }
 
-  file { '/etc/httpd/conf.d/nagios.conf':
-    owner   => 'root',
-    group   => 'root',
-    mode    => '0644',
-    content => $apache_httpd_conf_content,
-    notify  => Service['httpd'],
-    require => Package['nagios'],
-  }
-  if $apache_httpd_htpasswd_source != false {
-    file { '/etc/nagios/.htpasswd':
-      owner   => 'root',
-      group   => 'apache',
-      mode    => '0640',
-      source  => $apache_httpd_htpasswd_source,
-      require => Package['nagios'],
-    }
-  }
-
   if $apache_httpd {
-    apache_httpd { 'prefork':
+    class { '::apache_httpd':
       ssl       => $apache_httpd_ssl,
       modules   => $apache_httpd_modules,
       keepalive => 'On',
+    }
+
+    # Set a default content template if no content/source is specified
+    if $apache_httpd_conf_source == undef {
+      if $apache_httpd_conf_content == undef {
+        $apache_httpd_conf_content_final = template("${module_name}/apache_httpd/httpd-nagios.conf.erb")
+      } else {
+        $apache_httpd_conf_content_final = $apache_httpd_conf_content
+      }
+    }
+    file { '/etc/httpd/conf.d/nagios.conf':
+      owner   => 'root',
+      group   => 'root',
+      mode    => '0644',
+      content => $apache_httpd_conf_content_final,
+      source  => $apache_httpd_conf_source,
+      notify  => Service['httpd'],
+      require => Package['nagios'],
+    }
+    if $apache_httpd_htpasswd_source != false {
+      file { '/etc/nagios/.htpasswd':
+        owner   => 'root',
+        group   => 'apache',
+        mode    => '0640',
+        source  => $apache_httpd_htpasswd_source,
+        require => Package['nagios'],
+      }
     }
   }
 
@@ -194,6 +209,9 @@ class nagios::server (
   }
 
   # Configuration files
+  if ($cfg_append != undef) {
+    validate_hash($cfg_append)
+  }
   file { '/etc/nagios/cgi.cfg':
     owner   => 'root',
     group   => 'root',
@@ -247,6 +265,10 @@ class nagios::server (
     require => Package['nagios'],
   }
   Nagios_service <<| tag == "nagios-${nagios_server}" |>> {
+    notify  => Service['nagios'],
+    require => Package['nagios'],
+  }
+  Nagios_servicedependency <<| tag == "nagios-${nagios_server}" |>> {
     notify  => Service['nagios'],
     require => Package['nagios'],
   }
@@ -324,6 +346,7 @@ class nagios::server (
     '/etc/nagios/nagios_hostdependency.cfg',
     '/etc/nagios/nagios_hostgroup.cfg',
     '/etc/nagios/nagios_service.cfg',
+    '/etc/nagios/nagios_servicedependency.cfg',
     '/etc/nagios/nagios_servicegroup.cfg',
     '/etc/nagios/nagios_timeperiod.cfg',
   ]:
@@ -365,6 +388,9 @@ class nagios::server (
   }
   nagios_command { 'check_ping':
     command_line => '$USER1$/check_ping -H $HOSTADDRESS$ $ARG1$',
+  }
+  nagios_command { 'check_ping6':
+    command_line => '$USER1$/check_ping -6 $ARG1$',
   }
   nagios_command { 'check_pop':
     command_line => '$USER1$/check_pop -H $HOSTADDRESS$ $ARG1$',
@@ -422,11 +448,11 @@ class nagios::server (
   nagios_command { 'check_nrpe_disk':
     command_line => "${nrpe} -c check_disk",
   }
-  nagios_command { 'check_nrpe_proc':
-    command_line => "${nrpe} -c check_proc",
+  nagios_command { 'check_nrpe_procs':
+    command_line => "${nrpe} -c check_procs",
   }
   nagios_command { 'check_nrpe_ntp_time':
-    command_line => "${nrpe} -c check_ntp_time",
+    command_line => "${nrpe} -u -c check_ntp_time",
   }
   # Custom NRPE-based commands using custom plugins
   nagios_command { 'check_nrpe_ram':
@@ -443,6 +469,12 @@ class nagios::server (
   }
   nagios_command { 'check_nrpe_moxi':
     command_line => "${nrpe} -c check_moxi",
+  }
+  nagios_command { 'check_nrpe_memcached':
+    command_line => "${nrpe} -c check_memcached",
+  }
+  nagios_command { 'check_nrpe_conntrack':
+    command_line => "${nrpe} -c check_conntrack",
   }
   # Custom NRPE-based commands using custom plugins, conditionally enabled
   nagios_command { 'check_nrpe_megaraid_sas':
@@ -507,6 +539,153 @@ class nagios::server (
   }
   nagios_command { 'check_nrpe_mysql_health_open_files':
     command_line => "${nrpe} -c check_mysql_health_open_files",
+  }
+  nagios_command { 'check_nrpe_postgres_archive_ready':
+    command_line => "${nrpe} -c check_postgres_archive_ready",
+  }
+  nagios_command { 'check_nrpe_postgres_autovac_freeze':
+    command_line => "${nrpe} -c check_postgres_autovac_freeze",
+  }
+  nagios_command { 'check_nrpe_postgres_backends':
+    command_line => "${nrpe} -c check_postgres_backends",
+  }
+  nagios_command { 'check_nrpe_postgres_bloat':
+    command_line => "${nrpe} -c check_postgres_bloat",
+  }
+  nagios_command { 'check_nrpe_postgres_checkpoint':
+    command_line => "${nrpe} -c check_postgres_checkpoint",
+  }
+  nagios_command { 'check_nrpe_postgres_cluster_id':
+    command_line => "${nrpe} -c check_postgres_cluster_id",
+  }
+  nagios_command { 'check_nrpe_postgres_commitratio':
+    command_line => "${nrpe} -c check_postgres_commitratio",
+  }
+  nagios_command { 'check_nrpe_postgres_connection':
+    command_line => "${nrpe} -c check_postgres_connection",
+  }
+  nagios_command { 'check_nrpe_postgres_database_size':
+    command_line => "${nrpe} -c check_postgres_database_size",
+  }
+  nagios_command { 'check_nrpe_postgres_disabled_triggers':
+    command_line => "${nrpe} -c check_postgres_disabled_triggers",
+  }
+  nagios_command { 'check_nrpe_postgres_disk_space':
+    command_line => "${nrpe} -c check_postgres_disk_space",
+  }
+  nagios_command { 'check_nrpe_postgres_fsm_pages':
+    command_line => "${nrpe} -c check_postgres_fsm_pages",
+  }
+  nagios_command { 'check_nrpe_postgres_fsm_relations':
+    command_line => "${nrpe} -c check_postgres_fsm_relations",
+  }
+  nagios_command { 'check_nrpe_postgres_hitratio':
+    command_line => "${nrpe} -c check_postgres_hitratio",
+  }
+  nagios_command { 'check_nrpe_postgres_hot_standby_delay':
+    command_line => "${nrpe} -c check_postgres_hot_standby_delay",
+  }
+  nagios_command { 'check_nrpe_postgres_last_analyze':
+    command_line => "${nrpe} -c check_postgres_last_analyze",
+  }
+  nagios_command { 'check_nrpe_postgres_last_vacuum':
+    command_line => "${nrpe} -c check_postgres_last_vacuum",
+  }
+  nagios_command { 'check_nrpe_postgres_last_autoanalyze':
+    command_line => "${nrpe} -c check_postgres_last_autoanalyze",
+  }
+  nagios_command { 'check_nrpe_postgres_last_autovacuum':
+    command_line => "${nrpe} -c check_postgres_last_autovacuum",
+  }
+  nagios_command { 'check_nrpe_postgres_listener':
+    command_line => "${nrpe} -c check_postgres_listener",
+  }
+  nagios_command { 'check_nrpe_postgres_locks':
+    command_line => "${nrpe} -c check_postgres_locks",
+  }
+  nagios_command { 'check_nrpe_postgres_logfile':
+    command_line => "${nrpe} -c check_postgres_logfile",
+  }
+  nagios_command { 'check_nrpe_postgres_new_version_bc':
+    command_line => "${nrpe} -c check_postgres_new_version_bc",
+  }
+  nagios_command { 'check_nrpe_postgres_new_version_box':
+    command_line => "${nrpe} -c check_postgres_new_version_box",
+  }
+  nagios_command { 'check_nrpe_postgres_new_version_cp':
+    command_line => "${nrpe} -c check_postgres_new_version_cp",
+  }
+  nagios_command { 'check_nrpe_postgres_new_version_pg':
+    command_line => "${nrpe} -c check_postgres_new_version_pg",
+  }
+  nagios_command { 'check_nrpe_postgres_new_version_tnm':
+    command_line => "${nrpe} -c check_postgres_new_version_tnm",
+  }
+  nagios_command { 'check_nrpe_postgres_pgb_pool_cl_active':
+    command_line => "${nrpe} -c check_postgres_pgb_pool_cl_active",
+  }
+  nagios_command { 'check_nrpe_postgres_pgb_pool_cl_waiting':
+    command_line => "${nrpe} -c check_postgres_pgb_pool_cl_waiting",
+  }
+  nagios_command { 'check_nrpe_postgres_pgb_pool_sv_active':
+    command_line => "${nrpe} -c check_postgres_pgb_pool_sv_active",
+  }
+  nagios_command { 'check_nrpe_postgres_pgb_pool_sv_idle':
+    command_line => "${nrpe} -c check_postgres_pgb_pool_sv_idle",
+  }
+  nagios_command { 'check_nrpe_postgres_pgb_pool_sv_used':
+    command_line => "${nrpe} -c check_postgres_pgb_pool_sv_used",
+  }
+  nagios_command { 'check_nrpe_postgres_pgb_pool_sv_tested':
+    command_line => "${nrpe} -c check_postgres_pgb_pool_sv_tested",
+  }
+  nagios_command { 'check_nrpe_postgres_pgb_pool_sv_login':
+    command_line => "${nrpe} -c check_postgres_pgb_pool_sv_login",
+  }
+  nagios_command { 'check_nrpe_postgres_pgb_pool_sv_maxwait':
+    command_line => "${nrpe} -c check_postgres_pgb_pool_sv_maxwait",
+  }
+  nagios_command { 'check_nrpe_postgres_pgbouncer_backends':
+    command_line => "${nrpe} -c check_postgres_pgbouncer_backends",
+  }
+  nagios_command { 'check_nrpe_postgres_pgbouncer_checksum':
+    command_line => "${nrpe} -c check_postgres_pgbouncer_checksum",
+  }
+  nagios_command { 'check_nrpe_postgres_pgagent_jobs':
+    command_line => "${nrpe} -c check_postgres_pgagent_jobs",
+  }
+  nagios_command { 'check_nrpe_postgres_prepared_txns':
+    command_line => "${nrpe} -c check_postgres_prepared_txns",
+  }
+  nagios_command { 'check_nrpe_postgres_query_time':
+    command_line => "${nrpe} -c check_postgres_query_time",
+  }
+  nagios_command { 'check_nrpe_postgres_same_schema':
+    command_line => "${nrpe} -c check_postgres_same_schema",
+  }
+  nagios_command { 'check_nrpe_postgres_sequence':
+    command_line => "${nrpe} -c check_postgres_sequence",
+  }
+  nagios_command { 'check_nrpe_postgres_settings_checksum':
+    command_line => "${nrpe} -c check_postgres_settings_checksum",
+  }
+  nagios_command { 'check_nrpe_postgres_slony_status':
+    command_line => "${nrpe} -c check_postgres_slony_status",
+  }
+  nagios_command { 'check_nrpe_postgres_txn_idle':
+    command_line => "${nrpe} -c check_postgres_txn_idle",
+  }
+  nagios_command { 'check_nrpe_postgres_txn_time':
+    command_line => "${nrpe} -c check_postgres_txn_time",
+  }
+  nagios_command { 'check_nrpe_postgres_txn_wraparound':
+    command_line => "${nrpe} -c check_postgres_txn_wraparound",
+  }
+  nagios_command { 'check_nrpe_postgres_version':
+    command_line => "${nrpe} -c check_postgres_version",
+  }
+  nagios_command { 'check_nrpe_postgres_wal_files':
+    command_line => "${nrpe} -c check_postgres_wal_files",
   }
 
   # Nagios contacts and contactgroups
@@ -576,7 +755,7 @@ class nagios::server (
     'retry_interval'        => '1',
     'max_check_attempts'    => '10',
     'check_command'         => 'check-host-alive',
-    'notification_period'   => 'workhours',
+    'notification_period'   => '24x7',
     'notification_interval' => '120',
     'notification_options'  => 'd,u,r',
     'contact_groups'        => 'admins',
@@ -675,13 +854,18 @@ class nagios::server (
   nagios_servicegroup { 'mysql_health':
     alias => 'MySQL Health service checks',
   }
+  nagios_servicegroup { 'postgres':
+    alias => 'PostgreSQL service checks',
+  }
 
   # With selinux, adjustements are needed for nagiosgraph
-  if $selinux == true and $::selinux_enforced == true {
+  # lint:ignore:quoted_booleans
+  if ( ( $selinux == true and $::selinux_enforced == true ) or
+  ( $selinux == 'true' and $::selinux_enforced == 'true' ) ) {
     selinux::audit2allow { 'nagios':
       source => "puppet:///modules/${module_name}/messages.nagios",
     }
   }
+  # lint:endignore
 
 }
-
