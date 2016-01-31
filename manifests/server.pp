@@ -143,11 +143,7 @@ class nagios::server (
   }
 
   # Other packages
-  package { [
-    'mailx', # For the default email notifications to work
-  ]:
-    ensure => installed,
-  }
+  ensure_packages('mailx')
 
   service { 'nagios':
     ensure    => running,
