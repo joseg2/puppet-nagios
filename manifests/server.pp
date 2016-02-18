@@ -164,11 +164,11 @@ class nagios::server (
     ensure    => 'running',
     enable    => true,
     # "service nagios status" returns 0 when "nagios is not running" :-(
-    hasstatus => false,
+    # hasstatus => false,
     # Don't get fooled by any process with "nagios" in its command line
-    pattern   => '/usr/sbin/nagios',
+    # pattern   => '/usr/sbin/nagios',
     # Work around files created root:root mode 600 (known issue)
-    restart   => '/bin/chgrp nagios /etc/nagios/nagios_*.cfg && /bin/chmod 640 /etc/nagios/nagios_*.cfg && /sbin/service nagios reload',
+    # restart   => '/bin/chgrp nagios /etc/nagios/nagios_*.cfg && /bin/chmod 640 /etc/nagios/nagios_*.cfg && /sbin/service nagios reload',
     require   => Package['nagios'],
   }
 
