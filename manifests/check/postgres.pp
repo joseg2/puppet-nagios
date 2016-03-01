@@ -149,7 +149,10 @@ class nagios::check::postgres (
   }
 
   # Custom queries
-  nagios::check::postgres::custom_query { keys($custom_queries): }
+  unless empty($custom_queries) {
+    $keys_custom_queries = keys($custom_queries)
+    nagios::check::postgres::custom_query { $keys_custom_queries: }
+  }
 
 }
 
