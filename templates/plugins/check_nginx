@@ -14,6 +14,7 @@ Checks nginx status for nagios integration.
 Mandatory arguments to long options are mandatory for short options too.
   -h, --help
   -H, --host=HOST       Connection hostname or IP address. Default: 127.0.0.1
+  -o, --port=PORT       Port. Default: 80
   -P, --path=PATH       Path to the nginx stub status. Default: /status
   -u, --user=USER       Basic auth username. Default: off
   -p, --pass=PASS       Basic auth password. Default: off
@@ -27,7 +28,7 @@ Examples:
     sys.exit(3)
 
 try:
-    options,args = getopt.getopt(sys.argv[1:],"hH:P:u:p:w:c:",["help","host=","path=","user=","pass=","warning=","critical="])
+    options,args = getopt.getopt(sys.argv[1:],"hH:o:P:u:p:w:c:",["help","host=","port=","path=","user=","pass=","warning=","critical="])
 except getopt.GetoptError:
     usage()
     sys.exit(3)
@@ -35,6 +36,7 @@ except getopt.GetoptError:
 # Defaults
 url  = "http://127.0.0.1"
 path = "/status"
+port = "80"
 
 # Overrides and options
 for name,value in options:
@@ -42,6 +44,8 @@ for name,value in options:
        usage()
     if name in ("-H","--host"):
        url = "http://"+value
+    if name in ("-o","--port"):
+       port = value
     if name in ("-P","--path"):
        path = value
     if name in ("-u","--user"):
@@ -53,10 +57,10 @@ for name,value in options:
     if name in ("-c","--critical"):
        critical = int(value)
 try:
-    req = urllib2.Request(url+path)
+    req = urllib2.Request(url+":"+port+path)
     if 'user' in dir() and 'passwd' in dir():
         passman = urllib2.HTTPPasswordMgrWithDefaultRealm()
-        passman.add_password(None, url+path, user, passwd)
+        passman.add_password(None, url+":"+port+path, user, passwd)
         authhandler = urllib2.HTTPBasicAuthHandler(passman)
         opener = urllib2.build_opener(authhandler)
         urllib2.install_opener(opener)
