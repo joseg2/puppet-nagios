@@ -434,7 +434,7 @@ class nagios::server (
     command_line => '$USER1$/check_tcp -H $HOSTADDRESS$ -p $ARG1$',
   }
   nagios_command { 'check_nginx':
-    command_line => '$USER1$/check_nginx $ARG1$',
+    command_line => '$USER1$/check_nginx -H $HOSTADDRESS$ $ARG1$',
   }
   # Custom NRPE-based commands
   nagios_command { 'check_nrpe_users':
