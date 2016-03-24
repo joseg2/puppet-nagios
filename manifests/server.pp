@@ -359,7 +359,7 @@ class nagios::server (
     owner  => 'root',
     group  => 'nagios',
     mode   => '0640',
-    audit  => 'mtime',
+    audit  => 'content',
     notify => Service['nagios'],
   }
 
