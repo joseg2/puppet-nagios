@@ -340,8 +340,6 @@ class nagios::server (
     'nagios_timeperiod',
   ]:
     purge  => true,
-    # For some reason, 'notify' is ignored when resources are purged :-(
-    notify => Service['nagios'],
   }
 
   # Work around a puppet bug where created files are 600 root:root
@@ -361,7 +359,8 @@ class nagios::server (
     owner  => 'root',
     group  => 'nagios',
     mode   => '0640',
-    before => Service['nagios'],
+    audit  => 'mtime',
+    notify => Service['nagios'],
   }
 
   # Nagios commands
