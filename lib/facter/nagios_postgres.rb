@@ -8,7 +8,10 @@ binaries = [
 
 binaries.each do |filename|
   if FileTest.exists?(filename)
-    Facter.add('nagios_postgres') { setcode { true } }
+    Facter.add('nagios_postgres') { 
+      confine :kernel => :linux
+      setcode { true }
+    }
   end
 end
 
