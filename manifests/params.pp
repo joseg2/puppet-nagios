@@ -15,7 +15,6 @@ class nagios::params {
   $nagios_service = 'nagios'
   $nagios_user    = 'nagios'
   # nrpe
-  $nrpe_cfg_file  = '/etc/nagios/nrpe.cfg'
   $nrpe_command   = '$USER1$/check_nrpe -H $HOSTADDRESS$'
   $nrpe_options   = '-t 15'
 
@@ -54,6 +53,7 @@ class nagios::params {
       } else {
         $nrpe_pid_file    = hiera('nagios::params::nrpe_pid_file','/var/run/nrpe/nrpe.pid')
       }
+      $nrpe_cfg_file      = '/etc/nagios/nrpe.cfg'
       $nrpe_cfg_dir       = hiera('nagios::params::nrpe_cfg_dir','/etc/nrpe.d')
       $plugin_dir         = hiera('nagios::params::plugin_dir',"/usr/${libdir}/nagios/plugins")
       $pid_file           = hiera('nagios::params::pid_file','/var/run/nagios/nagios.pid')
@@ -71,6 +71,7 @@ class nagios::params {
       $nrpe_user          = 'nagios'
       $nrpe_group         = 'nagios'
       $nrpe_pid_file      = '/run/nrpe.pid'
+      $nrpe_cfg_file      = '/etc/nagios/nrpe.cfg'
       $nrpe_cfg_dir       = '/etc/nagios/nrpe.d'
       $plugin_dir         = "/usr/${libdir}/nagios/plugins"
       $pid_file           = '/run/nagios.pid'
@@ -89,6 +90,7 @@ class nagios::params {
       $nrpe_user          = 'nagios'
       $nrpe_group         = 'nagios'
       $nrpe_pid_file      = hiera('nagios::params::nrpe_pid_file','/var/run/nagios/nrpe.pid')
+      $nrpe_cfg_file      = '/etc/nagios/nrpe.cfg'
       $nrpe_cfg_dir       = hiera('nagios::params::nrpe_cfg_dir','/etc/nagios/nrpe.d')
       $plugin_dir         = hiera('nagios::params::plugin_dir','/usr/lib/nagios/plugins')
       $pid_file           = hiera('nagios::params::pid_file','/var/run/nagios/nagios.pid')
@@ -100,12 +102,30 @@ class nagios::params {
         tag    => $nagios_plugins_packages,
       }
     }
+    'Solaris': {
+      $nrpe_package       = [ 'CSWnrpe' ]
+      $nrpe_package_alias = 'nrpe'
+      $nrpe_service       = 'cswnrpe'
+      $nrpe_user          = 'nagios'
+      $nrpe_group         = 'nagios'
+      $nrpe_pid_file      = '/var/run/nrpe.pid'
+      $nrpe_cfg_file      = '/etc/opt/csw/nrpe.cfg'
+      $nrpe_cfg_dir       = '/etc/opt/csw/nrpe.d'
+      $plugin_dir         = '/opt/csw/libexec/nagios-plugins'
+      # No package splitting in Solaris
+      @package { 'CSWnagios-plugins':
+        ensure   => installed,
+        tag      => $nagios_plugins_packages,
+        provider => 'pkgutil',
+      }
+    }
     default: {
       $nrpe_package       = [ 'nrpe', 'nagios-plugins' ]
       $nrpe_service       = 'nrpe'
       $nrpe_user          = 'nrpe'
       $nrpe_group         = 'nrpe'
       $nrpe_pid_file      = hiera('nagios::params::nrpe_pid_file','/var/run/nrpe.pid')
+      $nrpe_cfg_file      = '/etc/nagios/nrpe.cfg'
       $nrpe_cfg_dir       = hiera('nagios::params::nrpe_cfg_dir','/etc/nagios/nrpe.d')
       $plugin_dir         = hiera('nagios::params::plugin_dir','/usr/libexec/nagios/plugins')
       $pid_file           = hiera('nagios::params::pid_file','/var/run/nagios.pid')
