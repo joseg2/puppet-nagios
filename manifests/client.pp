@@ -103,6 +103,16 @@ class nagios::client (
     require => Package['nrpe'],
   }
 
+  # Don't assume directory exists
+  if !defined(File['/etc/nagios']) {
+    file { '/etc/nagios':
+      ensure => 'directory',
+      owner  => 'root',
+      group  => 'root',
+      mode   => '0755',
+    }
+  }
+
   # Where to store configuration for our custom nagios_* facts
   # These facts are mostly obsolete and pre-date hiera existence
   file { '/etc/nagios/facter':
