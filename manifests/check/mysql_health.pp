@@ -44,6 +44,7 @@ class nagios::check::mysql_health (
   if $pkg {
     $pkgname = $::operatingsystem ? {
       'Gentoo' => 'net-analyzer/nagios-check_mysql_health',
+      'CentOS' => 'nagios-plugins-mysql',
       default  => 'nagios-plugins-mysql_health',
     }
     $pkgensure = $ensure ? {
